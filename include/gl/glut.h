@@ -1,4 +1,4 @@
-=#ifndef __glut_h__
+#ifndef __glut_h__
 #define __glut_h__
 
 /* Copyright (c) Mark J. Kilgard, 1994, 1995, 1996, 1998. */

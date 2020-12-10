@@ -14,7 +14,8 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
+    void ChangeImportPath();
+    QString path;
 private:
     Ui::MainWindow *ui;
 };
