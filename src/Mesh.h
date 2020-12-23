@@ -319,6 +319,9 @@ public:
     // functions for loading obj files,
     // you DO NOT need to understand and use them
     bool LoadObjFile(const char* filename);
+    bool LoadstlFile(const char* filename);
+    void ChangeVertexPosition();
+    void SetIteration(int iter);
     void AddVertex(Vertex* v);
     void AddFace(int v1, int v2, int v3);
     void Clear();
@@ -333,34 +336,30 @@ public:
     void ComputeVertexCurvatures();
     void UmbrellaSmooth(bool uniformWeights = true);
     void ImplicitUmbrellaSmooth(bool uniformWeights = true);
-    bool Skeleton();
     /************************************************************************/
 
     // additional helper functions
-    int CountBoundaryLoopsV1();
-    int CountBoundaryLoops();
-    int CountConnectedComponents();
 	void TraverseComponents(HEdge*);
 
     void GroupingVertexFlags();
     //compute the one ring area of the vertices list. 
     //notice: the length of vec is vlist.size+1,  the last value is the total area.
     void VerticesAreaCompute(std::vector<double> *vec);
-    void SkeletonParamInit();
-
     static void SetPrevNext(HEdge* e1, HEdge* e2);
     static void SetTwin(HEdge* e1, HEdge* e2);
     static void SetFace(Face* f, HEdge* e);
 
     static double Cot(const Eigen::Vector3d& p1, const Eigen::Vector3d& p2, const Eigen::Vector3d& p3);
     static double TriArea(const Eigen::Vector3d& p1, const Eigen::Vector3d& p2, const Eigen::Vector3d& p3);
+
+    double origialFaceNum;
 private:
     //store the original delta_X (detail)
     Eigen::VectorXd vx, vy, vz;
     Eigen::VectorXd areaRatio;
-    const double SL = 2;
-    double m_ml = 0;
-    double m_mh = 1;
+
+
+    int iteration_i = 6;
     int meshcontractioncount = 0;
     std::vector <double> originalArea;// the original one ring areas
     std::vector<double> currentArea; // the one ring areas after smooth

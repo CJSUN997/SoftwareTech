@@ -6,6 +6,7 @@
 #include "Mesh.h"
 #include <stdio.h>
 #include <queue>
+#include <QDebug>
 
 
 inline Eigen::Vector3d MinVector3d(Eigen::Vector3d v1, Eigen::Vector3d v2) {
@@ -52,6 +53,238 @@ const VertexList& Mesh::Vertices() const {
 
 const FaceList& Mesh::Faces() const {
     return fList;
+}
+
+struct vec3f
+{
+    float x, y, z;
+    int index;
+    inline vec3f operator =(const vec3f& v)
+    {
+        this->x = v.x;
+        this->y = v.y;
+        this->z = v.z;
+        this->index = v.index;
+        return *this;
+    }
+    inline bool operator==(vec3f& v)
+    {
+        if (this->x == v.x && this->y == v.y && this->z == v.z)
+            return true;
+        else
+            return false;
+    }
+    inline bool operator!=(vec3f& v)
+    {
+        return !(*this == v);
+    }
+};
+
+struct face
+{
+    vec3f verts[3];
+    face operator=(const face& f)
+    {
+        for (int n = 0; n < 3; n++)
+        {
+            this->verts[n] = f.verts[n];
+        }
+        return *this;
+    }
+};
+
+bool Mesh::LoadstlFile(const char* filename)
+{
+    if (filename == NULL || strlen(filename) == 0) return false;
+    FILE* filein = fopen(filename, "r");
+    if (!filein) return false;
+
+    Clear();
+
+    char buf[999];
+    char str[100];
+    float x, y, z;
+    std::vector<vec3f>	vec1;
+    std::vector<face>	myvector;
+
+    while (fscanf(filein, "%s", buf) != EOF)
+    {
+        switch (buf[0])
+        {
+        case's'://solid CATIA STL
+        case'o'://outer loop
+        case'e'://endloop or endfacet or endsolid C...
+            fgets(buf, sizeof(buf), filein);
+            break;
+        case'f'://facet normal ...!
+        {
+            face temp;
+            fscanf(filein, "%s", str);
+            fscanf(filein, "%f %f %f", &x, &y, &z);
+            fgets(buf, sizeof(buf), filein);//...might be '\0'
+            fgets(buf, sizeof(buf), filein);//skip "outer loop"
+            for (int k = 0; k < 3; k++)
+            {
+                float xx, yy, zz;
+                fscanf(filein, "%s", str);//skip "vertex"
+                fscanf(filein, "%f %f %f", &xx, &yy, &zz);
+                temp.verts[k].x = xx;
+                temp.verts[k].y = yy;
+                temp.verts[k].z = zz;
+                int w = 0;
+                if (vec1.size() == 0)
+                {
+                    temp.verts[k].index = w + 1;
+                }
+                else
+                {
+                    for (w = 0; w < vec1.size(); w++)
+                    {
+                        if (temp.verts[k] == vec1[w])
+                        {
+                            temp.verts[k].index = w + 1;
+                            break;
+                        }
+                        else if (temp.verts[k] != vec1[w])
+                            continue;
+
+                        else
+                            ;
+                    }
+                }
+
+                if (w == vec1.size())
+                {
+                    temp.verts[k].index = w + 1;
+                    vec1.push_back(temp.verts[k]);
+                }
+            }
+            myvector.push_back(temp);
+            break;
+        }
+        default:
+            fgets(buf, sizeof(buf), filein);
+            break;
+        }
+    }
+    fclose(filein);
+
+    for (int j = 0; j < vec1.size(); j++)
+        AddVertex(new Vertex(vec1[j].x, vec1[j].y, vec1[j].z));
+    for (int j = 0; j < myvector.size(); j++)
+        AddFace(myvector[j].verts[0].index - 1,
+            myvector[j].verts[1].index - 1,
+            myvector[j].verts[2].index - 1);
+
+    if (vList.empty())
+    {
+        // no data loaded
+        return false;
+    }
+    size_t i;
+    Eigen::Vector3d box = this->MaxCoord() - this->MinCoord();
+    for (i = 0; i < vList.size(); i++) vList[i]->SetPosition(vList[i]->Position() / box(0));
+
+    Eigen::Vector3d tot = Eigen::Vector3d::Zero();
+    for (i = 0; i < vList.size(); i++) tot += vList[i]->Position();
+    Eigen::Vector3d avg = tot / vList.size();
+    for (i = 0; i < vList.size(); i++) vList[i]->SetPosition(vList[i]->Position() - avg);
+
+    HEdgeList list;
+    for (i = 0; i < bheList.size(); i++)
+        if (bheList[i]->Start()) list.push_back(bheList[i]);
+    bheList = list;
+
+    for (i = 0; i < vList.size(); i++) {
+        //vList[i]->adjHEdges.clear();
+        vList[i]->SetIndex((int)i);
+        vList[i]->SetFlag(0);
+    }
+
+    qDebug() << "load stl success!!";
+    origialFaceNum = fList.size();
+    return true;
+}
+
+void Mesh::ChangeVertexPosition()
+{
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    double mutiple_Index = 0.1;/////中心点增加的比例
+
+    for (int i = 0; i < vList.size(); i++)
+        x += vList[i]->Position().x();
+    for (int i = 0; i < vList.size(); i++)
+        y += vList[i]->Position().y();
+    for (int i = 0; i < vList.size(); i++)
+        z += vList[i]->Position().z();
+    Eigen::Vector3d centerPosition =Eigen::Vector3d(x/vList.size(),y/vList.size(),z/vList.size()) ;
+   // 以上通过三个for循环求出模型的中心点给到centerPosition
+
+    int real_iteration = 0;
+    double initefaceNum = fList.size();
+    for (int index = 0; index < iteration_i; index++)
+    {
+        real_iteration += origialFaceNum * pow(4, index);
+    }
+
+    for (int i = 0; i <real_iteration; i++)
+    {
+
+        Vertex* first_Vertex = fList[i]->HalfEdge()->Start();
+        Vertex* second_Vertex = fList[i]->HalfEdge()->Next()->Start();
+        Vertex* third_Vertex = fList[i]->HalfEdge()->Next()->Next()->Start();
+        //获得一个面的三个顶点
+
+        Eigen::Vector3d first_Vector = second_Vertex->Position() - first_Vertex->Position();
+        double first_Vector_Value = first_Vector.norm();
+        double plus_first_Vector_Value = first_Vector_Value * mutiple_Index;
+        Eigen::Vector3d second_Vector = third_Vertex->Position() - second_Vertex->Position();
+        double second_Vector_Value = second_Vector.norm();
+        double plus_second_Vector_Value = second_Vector_Value * mutiple_Index;
+        Eigen::Vector3d third_Vector = first_Vertex->Position() - third_Vertex->Position();
+        double third_Vector_Value = third_Vector.norm();
+        double plus_third_Vector_Value = third_Vector_Value * mutiple_Index;
+        // 求出每个点增加的长度值
+
+        Eigen::Vector3d first_Midpoint = (first_Vertex->Position() + second_Vertex->Position()) / 2;
+        Eigen::Vector3d second_Midpoint = (second_Vertex->Position() + third_Vertex->Position()) / 2;
+        Eigen::Vector3d third_Midpoint = (first_Vertex->Position() + third_Vertex->Position()) / 2;
+        //求出中点坐标
+
+        Eigen::Vector3d first_Middle_Vector = first_Midpoint - centerPosition;
+        Eigen::Vector3d second_Middle_Vector = second_Midpoint - centerPosition;
+        Eigen::Vector3d third_Middle_Vector = third_Midpoint - centerPosition;
+        //求出中点到模型中心点的向量
+
+        double first_Middle_Vector_Value = first_Middle_Vector.norm() + plus_first_Vector_Value;
+        double second_Middle_Vector_Value = second_Middle_Vector.norm() + plus_second_Vector_Value;
+        double third_Middle_Vector_Value = third_Middle_Vector.norm() + plus_third_Vector_Value;
+        // 求出最后从中心点到新增加中点的总长度
+
+        first_Middle_Vector.normalize();
+        second_Middle_Vector.normalize();
+        third_Middle_Vector.normalize();
+        //点到中心向量标准化，求出方向
+
+        Eigen::Vector3d final_First_Point_Position = first_Middle_Vector_Value * first_Middle_Vector; ;
+        AddVertex(new Vertex(final_First_Point_Position.x(), final_First_Point_Position.y(), final_First_Point_Position.z()));
+        vList.back()->SetIndex(vList.size()-1);
+        Eigen::Vector3d final_Second_Point_Position = second_Middle_Vector_Value * second_Middle_Vector;
+        AddVertex(new Vertex(final_Second_Point_Position.x(), final_Second_Point_Position.y(), final_Second_Point_Position.z()));
+        vList.back()->SetIndex(vList.size()-1);
+        Eigen::Vector3d final_Third_Point_Position = third_Middle_Vector_Value * third_Middle_Vector;
+        AddVertex(new Vertex(final_Third_Point_Position.x(), final_Third_Point_Position.y(), final_Third_Point_Position.z()));
+        vList.back()->SetIndex(vList.size()-1);
+        //向量的方向乘以向量的大小得出新增加点的坐标，并将点加入到模型中
+
+        AddFace(first_Vertex->Index(), vList.size() - 3, vList.size() - 1);
+        AddFace(second_Vertex->Index(), vList.size() - 2, vList.size() - 3);
+        AddFace(third_Vertex->Index(), vList.size() - 1, vList.size() - 2);
+        AddFace(vList.size() - 3, vList.size() - 2, vList.size() - 1);
+        //根据索引加面
+    }
 }
 
 // load a .obj mesh definition file
@@ -104,6 +337,9 @@ bool Mesh::LoadObjFile(const char* filename) {
         vList[i]->SetFlag(0);
     }
 
+    qDebug() <<"load model success";
+
+    origialFaceNum = fList.size();
     return true;
 }
 
@@ -220,19 +456,9 @@ void Mesh::DisplayMeshInfo() {
 	int Euler;
 
 	Num_edges = (Num_hedges + Num_bhedges) / 2; 
-	boundaries = CountBoundaryLoops();
-	component = CountConnectedComponents();
     //欧拉公式
 	Euler = Num_vertices - Num_edges + Num_fcaes; 
 	genus = (2 - Euler - boundaries) / 2; 
-
-	std::cout << "Number of Vertices: " << Num_vertices << std::endl;
-	std::cout << "Number of Edges: " << Num_edges << std::endl;
-	std::cout << "Number of Faces: " << Num_fcaes << std::endl;
-	std::cout << "Number of Boundaries: " << boundaries << std::endl;
-	std::cout << "Number of Genus: " << genus << std::endl;
-	std::cout << "Number of Components: " << component << std::endl;
-	std::cout << "Euler characteristic: " << Euler << std::endl;
 
     std::cout << "*********Keyboard Function description:********** \n"
         << "1. u(U): explicit Umbrellasmooth \n"
@@ -463,240 +689,12 @@ void Mesh::ComputeVertexCurvatures() {
     }
 }
 
-// umbrella smoothing
-// uniformWeights: true for uniform-weight Laplacian, false for cotangent-weight Laplacian
-
-void Mesh::UmbrellaSmooth(bool uniformWeights) {
-    /*************************/
-    /**insert your code here**/
-    /*************************/
-
-}
-
-// implicit umbrella smoothing
-// uniformWeights: true for uniform-weight Laplacian, false for cotangent-weight Laplacian
-void Mesh::ImplicitUmbrellaSmooth(bool uniformWeights) {
-    /*************************/
-    /* insert your code here */
-    /*************************/		
-
-}
-
-//Skeleton Extraction
-//by Mesh Contraction
-void Mesh::SkeletonParamInit()
-{
-    VerticesAreaCompute(&originalArea);
-    areaRatio = Eigen::VectorXd::Ones(vList.size());
-    for (int i = 0; i < originalArea.size(); i++) {
-        m_ml += originalArea[i];
-    }
-    m_ml =150* sqrt(m_ml /vList.size());
-    m_mh = 3;
-    m_ml = 10;
-}
-
-bool Mesh::Skeleton()
-{
-    /*************************/
-   /***date：2020-11-27******/
-   /*editor:SUN CHANGJIANG***/
-   /*************************/
-
-   //in this hw we need to calculate the Laplacian Martex first
-   //and I use cotangent weight there
-
-   //compute the L matrix using cotangent weight
-    SparseMatrixBuilder* Lapl = new SparseMatrixBuilder();
-    for (int i = 0; i < vList.size(); i++) {
-
-        //compute the summation of weight around a vertex;
-        int k = vList[i]->Valence();
-        HEdge* nextHedge = vList[i]->HalfEdge()->Twin();
-        Eigen::Vector3d preVertex, currVertex, nexVertex;
-        double cotAphla, cotBeta, sumWeight = 0.0;
-
-        // compute weight for each one-ring vertex
-        for (int r = 0; r < k; r++) {
-            currVertex = nextHedge->Start()->Position();
-            preVertex = nextHedge->Twin()->Prev()->Start()->Position();
-            nexVertex = nextHedge->Next()->Twin()->Start()->Position();
-            cotAphla = Mesh::Cot(vList[i]->Position(), nexVertex, currVertex);
-            cotBeta = Mesh::Cot(vList[i]->Position(), preVertex, currVertex);
-            Lapl->AddEntry(i, nextHedge->Start()->Index(), m_ml * (cotAphla + cotBeta));
-            sumWeight += cotAphla + cotBeta;
-            nextHedge = nextHedge->Next()->Twin();
-        }
-        Lapl->AddEntry(i, i, -sumWeight * m_ml); //the value Lii = -1 because the weight of other vertex have divided sumWeight        
-    }
-    m_ml = m_ml * SL;
-
-    // add the matrix WH in the end of Lapl
-    VerticesAreaCompute(&currentArea);
-    for (int i = 0; i < vList.size(); i++) {
-        areaRatio[i] = m_mh * sqrt(originalArea[i] / currentArea[i]);
-        //std::cout << "current areaRatio of the vertex" << i << "is :" << areaRatio[i] << std::endl;
-        Lapl->AddEntry(vList.size() + i, i, areaRatio[i]);
-    }
-
-    Eigen::SparseMatrix<double> A(2 * vList.size(), vList.size());
-    Eigen::SparseMatrix<double> M(vList.size(), vList.size());
-
-    A = Lapl->ToSparseMatrix(2 * vList.size(), vList.size());
-    M = A.transpose() * A;
-    solver = new SparseLinearSystemSolver(M);
-
-    // structure the Column vector b
-    //get delta vectors of x, y, z coord for each vertex before transformation
-    vx = Eigen::VectorXd::Zero(vList.size());
-    vy = Eigen::VectorXd::Zero(vList.size());
-    vz = Eigen::VectorXd::Zero(vList.size());
-
-    for (int i = 0; i < vList.size(); i++) {
-        vx[i] = vList[i]->Position()(0);
-        vy[i] = vList[i]->Position()(1);
-        vz[i] = vList[i]->Position()(2);
-    }
-    Eigen::VectorXd bx = Eigen::VectorXd::Zero(2 * vList.size());
-    Eigen::VectorXd by = Eigen::VectorXd::Zero(2 * vList.size());
-    Eigen::VectorXd bz = Eigen::VectorXd::Zero(2 * vList.size());
-    for (int i = 0; i < vList.size(); i++) {
-        bx[vList.size() + i] = areaRatio[i] * vx[i];
-        by[vList.size() + i] = areaRatio[i] * vy[i];
-        bz[vList.size() + i] = areaRatio[i] * vz[i];
-    }
-
-    Eigen::VectorXd bx2 = Eigen::VectorXd::Zero(vList.size());
-    Eigen::VectorXd by2 = Eigen::VectorXd::Zero(vList.size());
-    Eigen::VectorXd bz2 = Eigen::VectorXd::Zero(vList.size());
-    bx2 = A.transpose() * bx;
-    by2 = A.transpose() * by;
-    bz2 = A.transpose() * bz;
-    bx = solver->Solve(bx2);
-    by = solver->Solve(by2);
-    bz = solver->Solve(bz2);
-
-    // mesh Contraction
-    for (int i = 0; i < vList.size(); i++) {
-        Eigen::Vector3d newPosition = Eigen::Vector3d(bx[i], by[i], bz[i]);
-        vList[i]->SetPosition(newPosition);
-    }
-    //
-    meshcontractioncount++;
-    std::cout << "Mesh contraction step: " << meshcontractioncount << " finished" << std::endl;
-
-    if (currentArea.back() / originalArea.back() <= 0.1) {
-        std::cout << "Mesh contract to the threshold(0.1) " << std::endl;
-        return true;
-    }
-    else
-        return false;
-}
-//use the bhelist directly
-int Mesh::CountBoundaryLoopsV1() {
-    
-    /*
-    start from bhelist[0] as boundary1, iterate through this vector and find the next boundary half edge 
-    which the start vertex is the end vertex of boundary1 and call it boundary2. then repeat this step, until we 
-    find a boundary half edge which the end vertex is the start vertex of boundary1.so we get a boundary loop successfully.
-    then we can remember this loop, delect it from bhelist, and find another loop from bhelist. finally, we can get 
-    all the boundary loops. then we can calculate the amount of loops  and draw it in the window. 
-    */
-    //int BoundaryLoopNum = 0;
-    HEdgeList BdEdges = bheList;
-    HEdgeList* Boundaryloop = new HEdgeList;
-    HEdge* bhetemp = BdEdges[0];
-    int bhe_hand = 0;
-    while (!BdEdges.empty()) {
-        for (size_t i = 0; i < BdEdges.size(); i++) {
-            if (bhetemp->End() == BdEdges[i]->Start()) {
-                Boundaryloop->push_back(bhetemp); // add boundary half edge in the boundaryloop
-                bhetemp = BdEdges[i];                                            
-                BdEdges.erase(BdEdges.begin() + bhe_hand);
-                if (bhe_hand < i) bhe_hand = i - 1;
-                else bhe_hand = i;
-                break;
-            }
-            else if (i == (BdEdges.size()-1)) {
-                Boundaryloop->push_back(bhetemp);
-                BoundaryLoop.push_back(Boundaryloop);
-                Boundaryloop = new HEdgeList;
-                BdEdges.erase(BdEdges.begin() + bhe_hand);
-                bhetemp = BdEdges[0];
-                bhe_hand = 0;           
-            }
-        }
-    }  
-	return BoundaryLoop.size();
-}
-//get the bhelist by BFS
-int Mesh::CountBoundaryLoops()
-{
-    HEdgeList Bhelist;
-    Vertex* v1;
-
-    std::queue<Vertex*> VertexQueue;
-    VertexQueue.push(vList[0]);
-    vList[0]->SetValid(false);
-    //loop through the vList by BFS, and get the boundary half edge list named Bhelist
-    while (!VertexQueue.empty()) {
-        v1 = VertexQueue.front();
-        OneRingHEdge ring(v1);
-        HEdge* curr = NULL;
-        //迭代计算，通过while（curr = ring.NextHEdge())可以遍历以v1为起点的所有边
-        while (curr = ring.NextHEdge()) {
-            if (curr->IsBoundary()) {
-                Bhelist.push_back(curr);
-            }
-            if (curr->End()->IsValid()) {
-                VertexQueue.push(curr->End());
-                curr->End()->SetValid(false);
-            }
-        }
-        VertexQueue.pop();
-    }
-    /************calculate the num of boundaryloop ************/
-    if (Bhelist.empty()) return 0;
-    HEdgeList BdEdges = Bhelist;
-    HEdgeList* Boundaryloop = new HEdgeList;
-    HEdge* bhetemp = BdEdges[0];
-    int bhe_hand = 0;
-    while (!BdEdges.empty()) {
-        for (size_t i = 0; i < BdEdges.size(); i++) {
-            if (bhetemp->End() == BdEdges[i]->Start()) {
-                Boundaryloop->push_back(bhetemp); // add boundary half edge in the boundaryloop
-                bhetemp = BdEdges[i];
-                BdEdges.erase(BdEdges.begin() + bhe_hand);
-                if (bhe_hand < i) bhe_hand = i - 1;
-                else bhe_hand = i;
-                break;
-            }
-            else if (i == (BdEdges.size() - 1)) {
-                Boundaryloop->push_back(bhetemp);
-                BoundaryLoop.push_back(Boundaryloop);
-                Boundaryloop = new HEdgeList;
-                BdEdges.erase(BdEdges.begin() + bhe_hand);
-                bhetemp = BdEdges[0];
-                bhe_hand = 0;
-            }
-        }
-    }
-    return BoundaryLoop.size();
-}
 
 void Mesh::TraverseComponents(HEdge* he)
 {
 	return;
 }
 
-
-int Mesh::CountConnectedComponents() 
-{
-    /*************************/
-    /* insert your code here */
-    /*************************/
-	return 0;
-}
 
 void Mesh::GroupingVertexFlags() {
     // set vertex flag to be 255 initially
@@ -792,4 +790,9 @@ void Vertex::SetParameterPosition(float x, float y)
 {
 	parameterposition[0] = x;
 	parameterposition[1] = y;
+}
+
+void Mesh::SetIteration(int iter){
+    iteration_i = iter;
+    ChangeVertexPosition();
 }
